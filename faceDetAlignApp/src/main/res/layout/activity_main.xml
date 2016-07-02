@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    tools:context="com.rzheng.facedetalignapp.MainActivity">
+
+    <SurfaceView  android:id="@+id/surfaceView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+    </SurfaceView>
+
+    <com.kyleduo.switchbutton.SwitchButton
+        android:id="@+id/camswitch"
+        style="@style/SwitchButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:textColor="#FF5449"
+        android:textStyle="bold"
+        android:checked="true"
+        app:kswThumbWidth="22dp"
+        app:kswThumbHeight="22dp"
+        app:kswThumbMargin="4dp"
+        app:kswTintColor="#30FF5449"
+        app:kswTextOff="F"
+        app:kswTextOn="B"
+        android:layout_gravity="right|top" />
+
+</FrameLayout>
