@@ -129,7 +129,7 @@ extern "C" {
             p += 4;
         }
 
-        return posArr; // these are cv coordinates, not canvas coordinates
+        return posArr;
     }
 
 
