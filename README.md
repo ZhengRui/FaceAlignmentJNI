@@ -25,5 +25,6 @@
 
 #### Reference
 
-[openface 0.2.0 post](http://bamos.github.io/2016/01/19/openface-0.2.0/)
-[A Lightened CNN for Deep Face Representation](http://arxiv.org/abs/1511.02683)
++ [openface 0.2.0 post](http://bamos.github.io/2016/01/19/openface-0.2.0/)
+
++ [A Lightened CNN for Deep Face Representation](http://arxiv.org/abs/1511.02683)
