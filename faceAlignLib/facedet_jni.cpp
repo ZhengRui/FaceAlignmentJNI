@@ -23,8 +23,10 @@ extern "C" {
         return detector;
     }
 
-    JNIEXPORT jlong JNICALL Java_com_rzheng_fdlib_FaceDetector_getAlignedFacesAddr(JNIEnv* env, jclass, jlong thiz) {
-        return (jlong) ((FaceDetector*)thiz)->getAlignedFacesCacheAddr();
+    JNIEXPORT void JNICALL Java_com_rzheng_fdlib_FaceDetector_loadShapePredictor(JNIEnv* env, jclass, jlong thiz, jstring landmarksFilePath) {
+        const char* spPath = env->GetStringUTFChars(landmarksFilePath, NULL);
+        ((FaceDetector*)thiz)->loadShapePredictor(spPath);
+        env->ReleaseStringUTFChars(landmarksFilePath, spPath);
     }
 
     JNIEXPORT jbyteArray JNICALL Java_com_rzheng_fdlib_FaceDetector_droidJPEGCalibrate(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata, jint front1orback0, jint orientCase) {
@@ -50,169 +52,90 @@ extern "C" {
         return jpegCalibrated;
     }
 
-    JNIEXPORT jbyteArray JNICALL Java_com_rzheng_fdlib_FaceDetector_boxesProcess(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata, jobjectArray bbxposArr, jobjectArray bbxtxtArr, jbooleanArray bbxprocArr, jintArray bbxproctypeArr) {
-        jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
-        uchar* buf = (uchar*) imgjData;
+    JNIEXPORT void JNICALL Java_com_rzheng_fdlib_FaceDetector_detectFromJPEG(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata, jboolean doalign) {
+        jbyte* picjData = env->GetByteArrayElements(jpegdata, 0);
+        uchar* buf = (uchar*) picjData;
         size_t len = env->GetArrayLength(jpegdata);
         std::vector<uchar> cdata(buf, buf+len);
-        cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
+        cv::Mat m = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
 
-        int bbxnum = env->GetArrayLength(bbxposArr);
-        // LOGD("boxes number: %d", bbxnum);
-        jboolean* bbxproc = env->GetBooleanArrayElements(bbxprocArr, 0);
-        jint* bbxproctype = env->GetIntArrayElements(bbxproctypeArr, 0);
-        cv::Scalar color;
+        ((FaceDetector*)thiz)->detectFaces(m);
+        if (doalign)
+            ((FaceDetector*)thiz)->alignFaces();
 
-        for (int i=0; i < bbxnum; i++) {
-            jintArray bbxposJ = (jintArray) env->GetObjectArrayElement(bbxposArr, i);
-            jint *bbxpos = env->GetIntArrayElements(bbxposJ, 0);
+        env->ReleaseByteArrayElements(jpegdata, picjData, JNI_ABORT);
+    }
 
-            jstring bbxtxtJ = (jstring) env->GetObjectArrayElement(bbxtxtArr, i);
-            const char* bbxtxt = env->GetStringUTFChars(bbxtxtJ, NULL);
+    JNIEXPORT void JNICALL Java_com_rzheng_fdlib_FaceDetector_detectFromRaw(JNIEnv* env, jclass, jlong thiz, jint width, jint height, jbyteArray frmdata, jint front1orback0, jint orientCase, jboolean doalign) {
+        // LOGD("native detect() called.");
+        jbyte* frmjData = env->GetByteArrayElements(frmdata, 0);
+        ((FaceDetector*)thiz)->detectRaw((int) width, (int) height, (unsigned char*) frmjData, (int) front1orback0, (int) orientCase, (bool) doalign);
+        env->ReleaseByteArrayElements(frmdata, frmjData, JNI_ABORT);
+    }
 
-            // LOGD("box position: (%d, %d) - (%d, %d), text: %s, do blur: %s, blur type: %d", bbxpos[0], bbxpos[1], bbxpos[2], bbxpos[3], bbxtxt, bbxproc[i]?"yes":"no", bbxproctype[i]);
+    JNIEXPORT jintArray JNICALL Java_com_rzheng_fdlib_FaceDetector_getPos(JNIEnv* env, jclass, jlong thiz, jint face0landmarks1, jint cv0canvas1, jint width, jint height, jint front1orback0, jint orientCase) {
+        std::vector<cv::Rect> pos;
+        if (!face0landmarks1)
+            pos = ((FaceDetector*)thiz)->getFacesPos();
+        else
+            pos = ((FaceDetector*)thiz)->getLandmarksPos();
 
-            if (bbxproctype[i] == 2) {
-                color = cv::Scalar(0,0,255);
+        jintArray posArr = env->NewIntArray(pos.size() * 4);
+        jint posBuf[4];
+        int p = 0;
+        for(std::vector<cv::Rect>::const_iterator r = pos.begin(); r != pos.end(); r++) {
+            if (!cv0canvas1) {
+                posBuf[0] = r->x;
+                posBuf[1] = r->y;
+                posBuf[2] = r->x + r->width;
+                posBuf[3] = r->y + r->height;
             } else {
-                color = cv::Scalar(0,255,0);
-            }
+                switch (orientCase) {
+                    case 0:
+                        posBuf[0] = front1orback0 ? height - r->x - r->width : r->x;
+                        posBuf[1] = r->y;
+                        posBuf[2] = posBuf[0] + r->width;
+                        posBuf[3] = posBuf[1] + r->height;
+                        break;
 
-            cv::Rect roi = cv::Rect(cv::Point(bbxpos[0], bbxpos[1]), cv::Point(bbxpos[2], bbxpos[3]));
+                    case 1:
+                        posBuf[0] = r->y;
+                        posBuf[1] = front1orback0 ? r->x : width - r->x - r->width;
+                        posBuf[2] = posBuf[0] + r->height;
+                        posBuf[3] = posBuf[1] + r->width;
+                        break;
 
-            if (bbxproc[i]) {
-                if (!bbxproctype[i]) {
-                    // blur face, default
-                    cv::medianBlur(img(roi), img(roi), 77);
-                } else {
-                    // blur body
+                    case 2:
+                        posBuf[0] = front1orback0 ? r->x : height - r->x - r->width;
+                        posBuf[1] = width - r->y - r->height;
+                        posBuf[2] = posBuf[0] + r->width;
+                        posBuf[3] = posBuf[1] + r->height;
+                        break;
+
+                    case 3:
+                        posBuf[0] = height - r->y - r->height;
+                        posBuf[1] = front1orback0 ? width - r->x - r->width : r->x;
+                        posBuf[2] = posBuf[0] + r->height;
+                        posBuf[3] = posBuf[1] + r->width;
+                        break;
+
+                    default:
+                        LOGD("Wrong orientCase value, should be {0, 1, 2, 3}");
+                        break;
                 }
             }
 
-            cv::rectangle(img, roi, color, 2);
-            cv::putText(img, bbxtxt, cv::Point(bbxpos[0], bbxpos[1]-10), cv::FONT_HERSHEY_DUPLEX, 0.8, color, 2);
-
-            env->ReleaseIntArrayElements(bbxposJ, bbxpos, JNI_ABORT);
-            env->ReleaseStringUTFChars(bbxtxtJ, bbxtxt);
-        }
-        env->ReleaseBooleanArrayElements(bbxprocArr, bbxproc, JNI_ABORT);
-        env->ReleaseIntArrayElements(bbxproctypeArr, bbxproctype, JNI_ABORT);
-
-        std::vector<int> params;
-        params.push_back(CV_IMWRITE_JPEG_QUALITY);
-        params.push_back(100);
-        std::vector<uchar> cdataEnc;
-        cv::imencode(".jpg", img, cdataEnc, params);
-        jbyteArray jpegBoxsProcessed = env->NewByteArray(cdataEnc.size());
-        env->SetByteArrayRegion(jpegBoxsProcessed, 0, cdataEnc.size(), (jbyte*)&cdataEnc[0]);
-
-        env->ReleaseByteArrayElements(jpegdata, imgjData, JNI_ABORT);
-        return jpegBoxsProcessed;
-    }
-
-    JNIEXPORT jbyteArray JNICALL Java_com_rzheng_fdlib_FaceDetector_detectAndBlurJPEG(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata) {
-        jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
-        uchar* buf = (uchar*) imgjData;
-        size_t len = env->GetArrayLength(jpegdata);
-        std::vector<uchar> cdata(buf, buf+len);
-        cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
-        cv::Mat imgDet = img;
-
-        std::vector<cv::Rect> bbsFiltered = ((FaceDetector*)thiz)->detectMat(imgDet, true);
-        for(std::vector<cv::Rect>::iterator r = bbsFiltered.begin(); r != bbsFiltered.end(); r++) {
-            cv::medianBlur(img(*r), img(*r), 77);
-        }
-
-        std::vector<int> params;
-        params.push_back(CV_IMWRITE_JPEG_QUALITY);
-        params.push_back(100);
-        std::vector<uchar> cdataEnc;
-        cv::imencode(".jpg", img, cdataEnc, params);
-        jbyteArray jpegProcessed = env->NewByteArray(cdataEnc.size());
-        env->SetByteArrayRegion(jpegProcessed, 0, cdataEnc.size(), (jbyte*)&cdataEnc[0]);
-
-        env->ReleaseByteArrayElements(jpegdata, imgjData, JNI_ABORT);
-        return jpegProcessed;
-    }
-
-    JNIEXPORT jintArray JNICALL Java_com_rzheng_fdlib_FaceDetector_getBbxPositions(JNIEnv* env, jclass, jlong thiz) {
-        std::vector<cv::Rect> bbsFiltered = ((FaceDetector*)thiz)->getBbsFiltered();
-        jintArray faceArr = env->NewIntArray(bbsFiltered.size() * 4);
-        jint faceBuf[4];
-        int p = 0;
-        for(std::vector<cv::Rect>::const_iterator r = bbsFiltered.begin(); r != bbsFiltered.end(); r++) {
-            faceBuf[0] = r->x;
-            faceBuf[1] = r->y;
-            faceBuf[2] = r->x + r->width;
-            faceBuf[3] = r->y + r->height;
-            env->SetIntArrayRegion(faceArr, p, 4, faceBuf);
+            env->SetIntArrayRegion(posArr, p, 4, posBuf);
             p += 4;
         }
 
-        return faceArr;
+        return posArr; // these are cv coordinates, not canvas coordinates
     }
 
 
-    JNIEXPORT jintArray JNICALL Java_com_rzheng_fdlib_FaceDetector_detect(JNIEnv* env, jclass, jlong thiz, jint width, jint height, jbyteArray frmdata, jint front1orback0, jint orientCase, jboolean doalign) {
-        // LOGD("native detect() called.");
-        jbyte* frmjData = env->GetByteArrayElements(frmdata, 0);
-        // call some image processing function
-        // LOGD("frame size: %d X %d, data length: %d", width, height, env->GetArrayLength(frmdata));
-        std::vector<cv::Rect> bbsFiltered = ((FaceDetector*)thiz)->detect((int) width, (int) height, (unsigned char*) frmjData, (int) front1orback0, (int) orientCase, (bool) doalign);
-        jintArray faceArr = env->NewIntArray(bbsFiltered.size() * 4);
-        jint faceBuf[4];
-        int p = 0;
-        //LOGD("Orient case: %d, Camera index: %d", orientCase, front1orback0);
-        for(std::vector<cv::Rect>::const_iterator r = bbsFiltered.begin(); r != bbsFiltered.end(); r++) {
-            switch (orientCase) {
-                case 0:
-                    faceBuf[0] = front1orback0 ? height - r->x - r->width : r->x;
-                    faceBuf[1] = r->y;
-                    faceBuf[2] = faceBuf[0] + r->width;
-                    faceBuf[3] = faceBuf[1] + r->height;
-                    break;
-
-                case 1:
-                    faceBuf[0] = r->y;
-                    faceBuf[1] = front1orback0 ? r->x : width - r->x - r->width;
-                    faceBuf[2] = faceBuf[0] + r->height;
-                    faceBuf[3] = faceBuf[1] + r->width;
-                    break;
-
-                case 2:
-                    faceBuf[0] = front1orback0 ? r->x : height - r->x - r->width;
-                    faceBuf[1] = width - r->y - r->height;
-                    faceBuf[2] = faceBuf[0] + r->width;
-                    faceBuf[3] = faceBuf[1] + r->height;
-                    break;
-
-                case 3:
-                    faceBuf[0] = height - r->y - r->height;
-                    faceBuf[1] = front1orback0 ? width - r->x - r->width : r->x;
-                    faceBuf[2] = faceBuf[0] + r->height;
-                    faceBuf[3] = faceBuf[1] + r->width;
-                    break;
-
-                default:
-                    LOGD("Wrong orientCase value, should be {0, 1, 2, 3}");
-                    break;
-            }
-
-            env->SetIntArrayRegion(faceArr, p, 4, faceBuf);
-            p += 4;
-        }
-
-        env->ReleaseByteArrayElements(frmdata, frmjData, JNI_ABORT);
-        return faceArr;
+    JNIEXPORT jlong JNICALL Java_com_rzheng_fdlib_FaceDetector_getAlignedFacesAddr(JNIEnv* env, jclass, jlong thiz) {
+        return (jlong) ((FaceDetector*)thiz)->getAlignedFacesCacheAddr();
     }
-
-
-    JNIEXPORT void JNICALL Java_com_rzheng_fdlib_FaceDetector_loadShapePredictor(JNIEnv* env, jclass, jlong thiz, jstring landmarksFilePath) {
-        const char* spPath = env->GetStringUTFChars(landmarksFilePath, NULL);
-        ((FaceDetector*)thiz)->loadShapePredictor(spPath);
-        env->ReleaseStringUTFChars(landmarksFilePath, spPath);
-    }
-
 
     JNIEXPORT void JNICALL Java_com_rzheng_fdlib_FaceDetector_clearCache(JNIEnv* env, jclass, jlong thiz) {
         ((FaceDetector*)thiz)->clearCache();

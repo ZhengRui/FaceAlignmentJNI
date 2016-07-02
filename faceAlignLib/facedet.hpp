@@ -27,19 +27,24 @@ class FaceDetector {
 public:
     FaceDetector(std::string cascadePath, int alignedFacesCacheSize);
     ~FaceDetector();
-    std::vector<cv::Rect> detect(int width, int height, unsigned char* frmCData, int front1orback0, int orientCase, bool doalign = false);
-    std::vector<cv::Rect> detectMat(cv::Mat &BGRMat, bool doalign = false);
-    std::vector<cv::Rect> getBbsFiltered();
     void loadShapePredictor(std::string spPath);
-    std::vector<cv::Mat>* getAlignedFacesCacheAddr();
     void clearCache();
+
     void fromDroidCamToCV(cv::Mat &m, int front1orback0, int orientCase);
+    void detectFaces(cv::Mat &BGRMat);
+    void alignFaces();
+    void detectRaw(int width, int height, unsigned char* frmCData, int front1orback0, int orientCase, bool doalign = false);
+
+    std::vector<cv::Rect> getFacesPos();
+    std::vector<cv::Rect> getLandmarksPos();
+    std::vector<cv::Mat>* getAlignedFacesCacheAddr();
 
 private:
     cv::CascadeClassifier facecascade;
     cv::Mat kernel;
     cv::Mat BGRMat, GRAYMat, bbHSV, skinMask, BGRMatToAlign, faceAligned;
-    std::vector<cv::Rect> bbs, bbsFiltered;
+    std::vector<cv::Rect> bbs, bbsFiltered, bbsLandmarks;
+    std::vector<dlib::rectangle> dlibROIs;
     dlib::frontal_face_detector dlibDetector;
     dlib::shape_predictor dlibLandmarker;
     std::vector<cv::Mat> alignedFacesCache;
